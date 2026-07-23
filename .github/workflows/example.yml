@@ -40,14 +40,22 @@ jobs:
       - uses: actions/checkout@v7
 
       # E2E tests etc. generate artifact files here.
-      # Download a random image plus a plain text file for verification purposes.
+      # Download a random image plus an HTML file referencing it, for verification purposes.
       - name: Generate dummy artifacts
         run: |
           mkdir -p artifacts
           curl -fsSL "https://picsum.photos/seed/${{ github.run_id }}/800/600" -o artifacts/demo.png
-          echo "hello from run ${{ github.run_id }}" > artifacts/demo.txt
+          cat <<EOF > artifacts/demo.html
+          <!DOCTYPE html>
+          <html>
+          <body>
+            <p>hello from run ${{ github.run_id }}</p>
+            <img src="demo.png" alt="demo image">
+          </body>
+          </html>
+          EOF
 
       - uses: ./comment-files
         with:
           files: artifacts/**/*
-          message: 'Artifacts from this run:'
+          message: "Artifacts from this run:"
