@@ -1,0 +1,251 @@
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+import {
+  expandFiles,
+  buildBody,
+  detect,
+  build,
+} from '../comment-images/comment.mjs';
+
+const TMP = mkdtempSync(path.join(tmpdir(), 'comment-test-'));
+after(() => rmSync(TMP, { recursive: true, force: true }));
+
+const scriptPath = fileURLToPath(
+  new URL('../comment-images/comment.mjs', import.meta.url),
+);
+
+// Create a workspace dir under TMP populated with the given files. `files` maps
+// a relative path to its contents; parent dirs are created as needed.
+const makeWorkspace = (name, files) => {
+  const ws = path.join(TMP, name);
+  mkdirSync(ws, { recursive: true });
+  for (const [rel, contents] of Object.entries(files)) {
+    const full = path.join(ws, rel);
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, contents);
+  }
+  return ws;
+};
+
+// Create a RUNNER_TEMP dir under TMP with an empty GITHUB_OUTPUT file, returning
+// both paths. Mirrors how the detect step is wired in the composite action.
+const makeRunnerTemp = (name) => {
+  const rt = path.join(TMP, name);
+  mkdirSync(rt, { recursive: true });
+  const githubOutput = path.join(rt, 'github_output');
+  writeFileSync(githubOutput, '');
+  return { rt, githubOutput };
+};
+
+// =============================================================================
+// detect / expandFiles
+// =============================================================================
+
+test('detect: space-separated globs expand', () => {
+  const ws = makeWorkspace('ws1', {
+    'artifacts/a.gif': 'x',
+    'artifacts/b.gif': 'x',
+    'other.png': 'x',
+  });
+
+  const list = expandFiles('artifacts/*.gif other.png', ws);
+  assert.deepEqual(list, ['artifacts/a.gif', 'artifacts/b.gif', 'other.png']);
+
+  // Also exercise detect(env) end-to-end (files.txt + GITHUB_OUTPUT).
+  const { rt, githubOutput } = makeRunnerTemp('rt1');
+
+  detect({
+    FILES: 'artifacts/*.gif other.png',
+    RUNNER_TEMP: rt,
+    GITHUB_OUTPUT: githubOutput,
+    GITHUB_WORKSPACE: ws,
+  });
+
+  const filesTxt = readFileSync(path.join(rt, 'files.txt'), 'utf8');
+  const lines = filesTxt.split('\n').filter(Boolean);
+  assert.ok(lines.includes('artifacts/a.gif'));
+  assert.ok(lines.includes('artifacts/b.gif'));
+  assert.ok(lines.includes('other.png'));
+  assert.equal(lines.length, 3);
+
+  const output = readFileSync(githubOutput, 'utf8');
+  assert.ok(output.includes('matched=true'));
+});
+
+test('detect: newline-separated globs expand', () => {
+  const ws = makeWorkspace('ws2', {
+    'artifacts/a.gif': 'x',
+    'artifacts/b.gif': 'x',
+  });
+
+  const list = expandFiles('artifacts/a.gif\nartifacts/b.gif', ws);
+  assert.deepEqual(list, ['artifacts/a.gif', 'artifacts/b.gif']);
+});
+
+test('detect: ** recursive match', () => {
+  const ws = makeWorkspace('ws3', {
+    'artifacts/top.gif': 'x',
+    'artifacts/deep/nested/low.gif': 'x',
+  });
+
+  const list = expandFiles('artifacts/**/*.gif', ws);
+  assert.ok(list.includes('artifacts/top.gif'));
+  assert.ok(list.includes('artifacts/deep/nested/low.gif'));
+});
+
+test('detect: nullglob - zero matches is not an error', () => {
+  const ws = makeWorkspace('ws4', {});
+
+  const list = expandFiles('artifacts/*.nope', ws);
+  assert.deepEqual(list, []);
+
+  const { rt, githubOutput } = makeRunnerTemp('rt4');
+
+  assert.doesNotThrow(() => {
+    detect({
+      FILES: 'artifacts/*.nope',
+      RUNNER_TEMP: rt,
+      GITHUB_OUTPUT: githubOutput,
+      GITHUB_WORKSPACE: ws,
+    });
+  });
+
+  const filesTxt = readFileSync(path.join(rt, 'files.txt'), 'utf8');
+  assert.equal(filesTxt, '');
+
+  const output = readFileSync(githubOutput, 'utf8');
+  assert.ok(output.includes('matched=false'));
+});
+
+test('detect: paths are ./-stripped and sorted/unique', () => {
+  const ws = makeWorkspace('ws5', {
+    'artifacts/z.gif': 'x',
+    'artifacts/a.gif': 'x',
+  });
+
+  const list = expandFiles(
+    './artifacts/z.gif ./artifacts/a.gif artifacts/z.gif',
+    ws,
+  );
+  assert.deepEqual(list, ['artifacts/a.gif', 'artifacts/z.gif']);
+});
+
+// =============================================================================
+// build / buildBody
+// =============================================================================
+
+test('build: image lines with trailing-slash prefix concat', () => {
+  const body = buildBody({
+    files: ['artifacts/a.gif'],
+    urlPrefix: 'https://raw.example.test/owner/repo/deadbeef/pr-1/',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  assert.ok(
+    body.includes(
+      '![artifacts/a.gif](https://raw.example.test/owner/repo/deadbeef/pr-1/artifacts/a.gif)',
+    ),
+  );
+});
+
+test('build: MESSAGE present at top', () => {
+  const body = buildBody({
+    files: ['artifacts/a.gif'],
+    urlPrefix: 'https://x/',
+    message: 'Here are the screenshots',
+    marker: '<!-- m -->',
+  });
+  const lines = body.split('\n');
+  assert.equal(lines[0], 'Here are the screenshots');
+  assert.equal(lines[1], '');
+});
+
+test('build: MESSAGE empty => no message line', () => {
+  const body = buildBody({
+    files: ['artifacts/a.gif'],
+    urlPrefix: 'https://x/',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  const firstLine = body.split('\n')[0];
+  assert.ok(firstLine.startsWith('![artifacts/a.gif]'));
+});
+
+test('build: MARKER is the last line and matches input', () => {
+  const marker = '<!-- artifact-branch-comment-images -->';
+  const body = buildBody({
+    files: ['artifacts/a.gif'],
+    urlPrefix: 'https://x/',
+    message: '',
+    marker,
+  });
+  // body ends with `${marker}\n`, so splitting on '\n' yields a trailing ''.
+  const lines = body.split('\n');
+  assert.equal(lines[lines.length - 2], marker);
+});
+
+test('build: subdirectory relpath preserved in alt text', () => {
+  const body = buildBody({
+    files: ['a/b/c.gif'],
+    urlPrefix: 'https://host/base/',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  assert.ok(body.includes('![a/b/c.gif](https://host/base/a/b/c.gif)'));
+});
+
+test('build: multiple files each get a line', () => {
+  const body = buildBody({
+    files: ['artifacts/a.gif', 'artifacts/b.gif'],
+    urlPrefix: 'https://h/',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  assert.ok(body.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
+  assert.ok(body.includes('![artifacts/b.gif](https://h/artifacts/b.gif)'));
+});
+
+test('build: body written to both comment-body.md and step summary', () => {
+  const rt = path.join(TMP, 'brt1');
+  mkdirSync(rt, { recursive: true });
+  writeFileSync(path.join(rt, 'files.txt'), 'artifacts/a.gif\n');
+  const summary = path.join(rt, 'step_summary');
+  writeFileSync(summary, '');
+
+  build({
+    RUNNER_TEMP: rt,
+    URL_PREFIX: 'https://h/',
+    MESSAGE: 'Hello',
+    MARKER: '<!-- m -->',
+    GITHUB_STEP_SUMMARY: summary,
+  });
+
+  const bodyContent = readFileSync(path.join(rt, 'comment-body.md'), 'utf8');
+  assert.ok(bodyContent.length > 0);
+  assert.ok(bodyContent.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
+
+  const summaryContent = readFileSync(summary, 'utf8');
+  assert.ok(summaryContent.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
+  assert.ok(summaryContent.split('\n').includes('Hello'));
+  assert.equal(summaryContent, bodyContent);
+});
+
+// =============================================================================
+// CLI
+// =============================================================================
+
+test('CLI: unknown mode exits 1 with stderr message', () => {
+  const result = spawnSync('node', [scriptPath, 'bogus']);
+  assert.equal(result.status, 1);
+  assert.ok(
+    result.stderr.toString().includes(
+      "comment.mjs: unknown mode 'bogus' (expected detect|build)",
+    ),
+  );
+});

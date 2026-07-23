@@ -40,7 +40,7 @@ runs:
   steps:
     - id: detect
       shell: bash
-      run: ${{ github.action_path }}/comment.sh detect
+      run: node ${{ github.action_path }}/comment.mjs detect
       env:
         FILES: ${{ inputs.files }}
         RUNNER_TEMP: ${{ runner.temp }}
@@ -55,7 +55,7 @@ runs:
     - id: build
       if: steps.detect.outputs.matched == 'true'
       shell: bash
-      run: ${{ github.action_path }}/comment.sh build
+      run: node ${{ github.action_path }}/comment.mjs build
       env:
         URL_PREFIX: ${{ steps.publish.outputs.url-prefix }}
         MESSAGE: ${{ inputs.message }}
