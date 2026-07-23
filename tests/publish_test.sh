@@ -280,6 +280,66 @@ check "auto dest-dir file placed under 99887766-2/" \
   "git --git-dir='$BARE_AUTO' cat-file -e '${AUTO_BRANCH}:99887766-2/artifacts/auto.gif'"
 
 echo
+echo "== Test 10: a glob pattern expands and matches files =="
+# Regression: FILES may be a glob (e.g. artifacts/*.txt), not a literal path.
+# It must be expanded before rsync, otherwise rsync receives the literal
+# pattern and fails with "No such file or directory".
+BARE_GLOB="$TMP/remote-glob.git"
+git init -q --bare "$BARE_GLOB"
+WS_GLOB="$TMP/ws-glob"
+mkdir -p "$WS_GLOB/artifacts"
+echo "g1" > "$WS_GLOB/artifacts/one.txt"
+echo "g2" > "$WS_GLOB/artifacts/two.txt"
+OUT_GLOB="$TMP/output.glob"
+( cd "$WS_GLOB" && \
+  REPO_URL="file://$BARE_GLOB" \
+  GITHUB_REPOSITORY="owner/repo" \
+  GITHUB_OUTPUT="$OUT_GLOB" \
+  SERVER_URL="https://raw.example.test" \
+  BRANCH_PREFIX="$BRANCH" \
+  DEST_DIR="pr-glob" \
+  RUN_ID="1" RUN_ATTEMPT="1" \
+  RETAIN_DAYS="$RETAIN" \
+  FILES="artifacts/*.txt" \
+  GITHUB_TOKEN="dummy" \
+  bash "$PUBLISH" >/dev/null 2>"$TMP/err.glob" ) || fail "publish (glob) succeeded"
+GLOB_BRANCH="$(sed -n 's/^branch=//p' "$OUT_GLOB")"
+check "glob matched both files (one.txt)" \
+  "git --git-dir='$BARE_GLOB' cat-file -e '${GLOB_BRANCH}:pr-glob/artifacts/one.txt'"
+check "glob matched both files (two.txt)" \
+  "git --git-dir='$BARE_GLOB' cat-file -e '${GLOB_BRANCH}:pr-glob/artifacts/two.txt'"
+
+echo
+echo "== Test 11: a pattern matching nothing fails cleanly =="
+# Regression: when FILES matches no file, publish must fail fast with a clear
+# message instead of pushing an empty commit / spinning through retries.
+BARE_EMPTY="$TMP/remote-empty.git"
+git init -q --bare "$BARE_EMPTY"
+WS_EMPTY="$TMP/ws-empty"
+mkdir -p "$WS_EMPTY/artifacts"
+OUT_EMPTY="$TMP/output.empty"
+if ( cd "$WS_EMPTY" && \
+  REPO_URL="file://$BARE_EMPTY" \
+  GITHUB_REPOSITORY="owner/repo" \
+  GITHUB_OUTPUT="$OUT_EMPTY" \
+  SERVER_URL="https://raw.example.test" \
+  BRANCH_PREFIX="$BRANCH" \
+  DEST_DIR="pr-empty" \
+  RUN_ID="1" RUN_ATTEMPT="1" \
+  RETAIN_DAYS="$RETAIN" \
+  FILES="artifacts/*.nope" \
+  GITHUB_TOKEN="dummy" \
+  bash "$PUBLISH" >/dev/null 2>"$TMP/err.empty" ); then
+  fail "publish (no match) should exit non-zero"
+else
+  pass "publish (no match) exited non-zero"
+fi
+check "no-match error message names the pattern" \
+  "grep -q 'no files matched' '$TMP/err.empty'"
+check "no branch was created on no-match" \
+  "! git --git-dir='$BARE_EMPTY' show-ref --verify --quiet refs/heads/${BRANCH}-gen-0"
+
+echo
 echo "============================================================"
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL CHECKS PASSED"

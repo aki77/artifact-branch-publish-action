@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# globstar: expand `**` recursively so patterns like `artifacts/**/*.txt` match
+#   files at any depth (including directly under artifacts/), matching how users
+#   expect glob patterns in `files:` to behave. Only present on bash 4+, so it
+#   is enabled best-effort (GitHub's runners ship bash 5).
+# nullglob: a pattern matching nothing expands to nothing rather than being
+#   passed through literally (which would make rsync fail on a bogus path).
+shopt -s globstar 2>/dev/null || true
+shopt -s nullglob
 
 # =============================================================================
 # artifact-branch-publish
@@ -120,10 +128,19 @@ should_rotate() {
 copy_files() {
   local workdir="$1"
   mkdir -p "$workdir/$DEST_DIR"
-  # Run rsync from SOURCE_DIR so -R preserves the relative structure.
+  # Expand $FILES from SOURCE_DIR (so relative globs resolve against the
+  # workspace) into an explicit list. globstar/nullglob make `**` recurse and
+  # non-matching patterns vanish, so `matches` holds exactly the real files.
+  local matches
   # $FILES intentionally unquoted to allow multiple space-separated globs.
   # shellcheck disable=SC2086
-  ( cd "$SOURCE_DIR" && rsync -R $FILES "$workdir/$DEST_DIR/" )
+  matches=$(cd "$SOURCE_DIR" && for f in $FILES; do printf '%s\n' "$f"; done)
+  if [ -z "$matches" ]; then
+    echo "artifact-branch-publish: no files matched pattern(s): ${FILES}" >&2
+    return 1
+  fi
+  # Run rsync from SOURCE_DIR so -R preserves the relative structure.
+  ( cd "$SOURCE_DIR" && printf '%s\n' "$matches" | rsync -R --files-from=- ./ "$workdir/$DEST_DIR/" )
 }
 
 # commit_all: stage everything and commit inside the given work tree.
