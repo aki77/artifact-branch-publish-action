@@ -30,3 +30,23 @@ jobs:
           echo "[demo.txt](${{ steps.publish.outputs.url-prefix }}artifacts/demo.txt)" >> "$GITHUB_STEP_SUMMARY"
           echo "branch: ${{ steps.publish.outputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
           echo "commit-sha: ${{ steps.publish.outputs.commit-sha }}" >> "$GITHUB_STEP_SUMMARY"
+
+  comment-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # E2E tests etc. generate screenshot/image files here.
+      # Generate a tiny dummy PNG (1x1 transparent pixel) for verification purposes.
+      - name: Generate dummy images
+        run: |
+          mkdir -p artifacts
+          base64 -d > artifacts/demo.png <<< "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUAAScY42YAAAAASUVORK5CYII="
+
+      - uses: ./comment-images
+        with:
+          files: artifacts/**/*.png
+          message: 'Screenshots from this run:'

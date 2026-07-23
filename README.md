@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
 
   # E2E tests etc. generate the artifact files here
   - run: npm test
@@ -77,3 +77,67 @@ Internally, artifacts are managed using a "two-branch generation rotation" schem
 - On private repositories, `raw.githubusercontent.com` URLs cannot be viewed without authentication. Viewers also need access to the repository.
 - Artifacts are automatically isolated into a subdirectory unique to each run (`<run_id>-<run_attempt>`), so file contents never collide across different runs. Push conflicts from concurrent runs (a force-push race on the generation branch) are resolved via automatic retry.
 - This action never affects the caller's checked-out working tree or git state. It operates entirely within its own temporary clone.
+
+## `comment-images` sub-action
+
+A sub-action that publishes image files matching a glob (internally using `artifact-branch-publish` above), writes a message plus an inline image list as markdown to the Step Summary, and — only when running in a PR context — posts the same content as a PR comment. If the glob matches zero files, it exits successfully without publishing, writing the Step Summary, or commenting.
+
+The calling workflow needs **`permissions: contents: write`** and **`permissions: pull-requests: write`**.
+
+```yaml
+name: Example
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  comment-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # E2E tests etc. generate the image files here
+      - run: npm test
+
+      - uses: aki77/artifact-branch-publish-action/comment-images@main
+        with:
+          files: artifacts/**/*.png
+          message: 'Screenshots from this run:'
+```
+
+### inputs
+
+| Name | Required | Default | Description |
+| --- | --- | --- | --- |
+| `files` | ✅ | - | Glob of image files to publish and comment (space-separated for multiple, e.g. `artifacts/**/*.gif`) |
+| `message` | | `''` | Optional leading message placed above the images in the comment body. |
+| `marker` | | `<!-- artifact-branch-comment-images -->` | Hidden HTML marker appended to the comment. Used to find and replace prior comments from this action. |
+| `branch-prefix` | | `artifacts` | Prefix for the dedicated rotating branches. Passed through to artifact-branch-publish. |
+| `retain-days` | | `30` | Minimum number of days a published URL is guaranteed to stay valid. Passed through to artifact-branch-publish. |
+| `github-token` | | `${{ github.token }}` | Token used to push and to post the comment (needs contents: write and pull-requests: write). |
+
+### outputs
+
+| Name | Description |
+| --- | --- |
+| `url-prefix` | Commit-pinned base URL. Append the relative file path to get the viewable URL. |
+| `commit-sha` | The commit SHA the artifacts were pushed as. |
+| `branch` | The actual generation branch the artifacts were pushed to. |
+| `matched` | Whether the files pattern matched at least one file (true/false). |
+| `comment-posted` | Whether a PR comment was posted (true/false). |
+
+### Upsert behavior
+
+PR comments are a pseudo-upsert: before posting, this action uses [`aki77/delete-pr-comments-action`](https://github.com/aki77/delete-pr-comments-action) to delete any prior comment whose body contains `marker` (a hidden HTML comment), then posts a fresh comment. This keeps the PR to a single comment from this action even if the workflow runs multiple times on the same PR.
+
+### Non-PR runs
+
+When the workflow isn't running in a PR context (e.g. `push`, `workflow_dispatch`, or any event where a PR number can't be resolved), the PR comment step is skipped and only the Step Summary is written.
+
+### Notes
+
+- On private repositories, images embedded via `raw.githubusercontent.com` won't render for unauthenticated viewers — since inline embedding is the whole point of this sub-action, keep this in mind when using it on private repos.

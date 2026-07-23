@@ -1,0 +1,91 @@
+name: 'artifact-branch-comment-images'
+description: 'Publish matched image files and post (replacing any previous) a PR comment linking to them'
+inputs:
+  files:
+    description: 'Glob pattern of image files to publish and comment (e.g. artifacts/**/*.gif)'
+    required: true
+  message:
+    description: 'Optional leading message placed above the images in the comment body.'
+    default: ''
+  marker:
+    description: 'Hidden HTML marker appended to the comment. Used to find and replace prior comments from this action.'
+    default: '<!-- artifact-branch-comment-images -->'
+  branch-prefix:
+    description: 'Prefix for the dedicated rotating branches. Passed through to artifact-branch-publish.'
+    default: 'artifacts'
+  retain-days:
+    description: 'Minimum number of days a published URL is guaranteed to stay valid. Passed through to artifact-branch-publish.'
+    default: '30'
+  github-token:
+    description: 'Token used to push and to post the comment (needs contents: write and pull-requests: write).'
+    default: ${{ github.token }}
+outputs:
+  url-prefix:
+    description: 'Commit-pinned base URL. Append the relative file path to get the viewable URL.'
+    value: ${{ steps.publish.outputs.url-prefix }}
+  commit-sha:
+    description: 'The commit SHA the artifacts were pushed as.'
+    value: ${{ steps.publish.outputs.commit-sha }}
+  branch:
+    description: 'The actual generation branch the artifacts were pushed to.'
+    value: ${{ steps.publish.outputs.branch }}
+  matched:
+    description: 'Whether the files pattern matched at least one file (true/false).'
+    value: ${{ steps.detect.outputs.matched }}
+  comment-posted:
+    description: 'Whether a PR comment was posted (true/false).'
+    value: ${{ steps.post.outputs.comment-posted || 'false' }}
+runs:
+  using: 'composite'
+  steps:
+    - id: detect
+      shell: bash
+      run: ${{ github.action_path }}/comment.sh detect
+      env:
+        FILES: ${{ inputs.files }}
+        RUNNER_TEMP: ${{ runner.temp }}
+    - id: publish
+      if: steps.detect.outputs.matched == 'true'
+      uses: aki77/artifact-branch-publish-action@main
+      with:
+        files: ${{ inputs.files }}
+        branch-prefix: ${{ inputs.branch-prefix }}
+        retain-days: ${{ inputs.retain-days }}
+        github-token: ${{ inputs.github-token }}
+    - id: build
+      if: steps.detect.outputs.matched == 'true'
+      shell: bash
+      run: ${{ github.action_path }}/comment.sh build
+      env:
+        URL_PREFIX: ${{ steps.publish.outputs.url-prefix }}
+        MESSAGE: ${{ inputs.message }}
+        MARKER: ${{ inputs.marker }}
+        RUNNER_TEMP: ${{ runner.temp }}
+    - id: prctx
+      # Resolve the PR number to comment on. pull_request.number covers PR-triggered
+      # events; issue.number only counts when issue.pull_request is set, since
+      # issue_comment also fires for plain issue comments. Otherwise empty (non-PR
+      # events), so later `if:` guards can skip commenting.
+      if: steps.detect.outputs.matched == 'true'
+      shell: bash
+      run: echo "number=${NUMBER}" >> "$GITHUB_OUTPUT"
+      env:
+        NUMBER: ${{ github.event.pull_request.number || (github.event.issue.pull_request && github.event.issue.number) }}
+    - id: delete
+      if: steps.detect.outputs.matched == 'true' && steps.prctx.outputs.number != ''
+      uses: aki77/delete-pr-comments-action@v3
+      with:
+        token: ${{ inputs.github-token }}
+        pullRequestNumber: ${{ steps.prctx.outputs.number }}
+        bodyContains: ${{ inputs.marker }}
+        includeIssueComments: 'true'
+    - id: post
+      if: steps.detect.outputs.matched == 'true' && steps.prctx.outputs.number != ''
+      shell: bash
+      run: |
+        gh pr comment "$NUMBER" --body-file "$RUNNER_TEMP/comment-body.md"
+        echo "comment-posted=true" >> "$GITHUB_OUTPUT"
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        NUMBER: ${{ steps.prctx.outputs.number }}
+        RUNNER_TEMP: ${{ runner.temp }}
