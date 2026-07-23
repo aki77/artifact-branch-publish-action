@@ -40,11 +40,11 @@ jobs:
       - uses: actions/checkout@v7
 
       # E2E tests etc. generate screenshot/image files here.
-      # Generate a tiny dummy PNG (1x1 transparent pixel) for verification purposes.
+      # Download a random image for verification purposes.
       - name: Generate dummy images
         run: |
           mkdir -p artifacts
-          base64 -d > artifacts/demo.png <<< "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUAAScY42YAAAAASUVORK5CYII="
+          curl -fsSL "https://picsum.photos/seed/${{ github.run_id }}/800/600" -o artifacts/demo.png
 
       - uses: ./comment-images
         with:
