@@ -78,9 +78,9 @@ Internally, artifacts are managed using a "two-branch generation rotation" schem
 - Artifacts are automatically isolated into a subdirectory unique to each run (`<run_id>-<run_attempt>`), so file contents never collide across different runs. Push conflicts from concurrent runs (a force-push race on the generation branch) are resolved via automatic retry.
 - This action never affects the caller's checked-out working tree or git state. It operates entirely within its own temporary clone.
 
-## `comment-images` sub-action
+## `comment-files` sub-action
 
-A sub-action that publishes image files matching a glob (internally using `artifact-branch-publish` above), writes a message plus an inline image list as markdown to the Step Summary, and — only when running in a PR context — posts the same content as a PR comment. If the glob matches zero files, it exits successfully without publishing, writing the Step Summary, or commenting.
+A sub-action that publishes files matching a glob (internally using `artifact-branch-publish` above), writes a message plus the file list as markdown to the Step Summary, and — only when running in a PR context — posts the same content as a PR comment. Image files (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.svg`, `.avif`, `.bmp`, `.ico`) are embedded inline as `![alt](url)`; every other file is listed as a plain `- [name](url)` bullet link, with the bullet list placed before the inline images so it stays visible without scrolling past them. If the glob matches zero files, it exits successfully without publishing, writing the Step Summary, or commenting.
 
 The calling workflow needs **`permissions: contents: write`** and **`permissions: pull-requests: write`**.
 
@@ -95,27 +95,27 @@ permissions:
   pull-requests: write
 
 jobs:
-  comment-images:
+  comment-files:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      # E2E tests etc. generate the image files here
+      # E2E tests etc. generate artifact files here
       - run: npm test
 
-      - uses: aki77/artifact-branch-publish-action/comment-images@main
+      - uses: aki77/artifact-branch-publish-action/comment-files@main
         with:
-          files: artifacts/**/*.png
-          message: 'Screenshots from this run:'
+          files: artifacts/**/*
+          message: 'Artifacts from this run:'
 ```
 
 ### inputs
 
 | Name | Required | Default | Description |
 | --- | --- | --- | --- |
-| `files` | ✅ | - | Glob of image files to publish and comment (space-separated for multiple, e.g. `artifacts/**/*.gif`) |
-| `message` | | `''` | Optional leading message placed above the images in the comment body. |
-| `marker` | | `<!-- artifact-branch-comment-images -->` | Hidden HTML marker appended to the comment. Used to find and replace prior comments from this action. |
+| `files` | ✅ | - | Glob of files to publish and comment (space-separated for multiple, e.g. `artifacts/**/*`) |
+| `message` | | `''` | Optional leading message placed above the file list in the comment body. |
+| `marker` | | `<!-- artifact-branch-comment-files -->` | Hidden HTML marker appended to the comment. Used to find and replace prior comments from this action. |
 | `branch-prefix` | | `artifacts` | Prefix for the dedicated rotating branches. Passed through to artifact-branch-publish. |
 | `retain-days` | | `30` | Minimum number of days a published URL is guaranteed to stay valid. Passed through to artifact-branch-publish. |
 | `github-token` | | `${{ github.token }}` | Token used to push and to post the comment (needs contents: write and pull-requests: write). |
@@ -140,4 +140,4 @@ When the workflow isn't running in a PR context (e.g. `push`, `workflow_dispatch
 
 ### Notes
 
-- On private repositories, images embedded via `raw.githubusercontent.com` won't render for unauthenticated viewers — since inline embedding is the whole point of this sub-action, keep this in mind when using it on private repos.
+- On private repositories, images embedded via `raw.githubusercontent.com` won't render for unauthenticated viewers — keep this in mind when using this sub-action on private repos. Non-image files are posted as regular links, which authenticated viewers with repository access can still open.

@@ -11,13 +11,14 @@ import {
   buildBody,
   detect,
   build,
-} from '../comment-images/comment.mjs';
+  isImagePath,
+} from '../comment-files/comment.mjs';
 
 const TMP = mkdtempSync(path.join(tmpdir(), 'comment-test-'));
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 const scriptPath = fileURLToPath(
-  new URL('../comment-images/comment.mjs', import.meta.url),
+  new URL('../comment-files/comment.mjs', import.meta.url),
 );
 
 // Create a workspace dir under TMP populated with the given files. `files` maps
@@ -137,6 +138,29 @@ test('detect: paths are ./-stripped and sorted/unique', () => {
 });
 
 // =============================================================================
+// isImagePath
+// =============================================================================
+
+test('isImagePath: recognises common image extensions case-insensitively', () => {
+  assert.equal(isImagePath('shot.png'), true);
+  assert.equal(isImagePath('shot.PNG'), true);
+  assert.equal(isImagePath('shot.jpg'), true);
+  assert.equal(isImagePath('shot.jpeg'), true);
+  assert.equal(isImagePath('shot.gif'), true);
+  assert.equal(isImagePath('shot.webp'), true);
+  assert.equal(isImagePath('shot.svg'), true);
+  assert.equal(isImagePath('shot.avif'), true);
+  assert.equal(isImagePath('shot.bmp'), true);
+  assert.equal(isImagePath('shot.ico'), true);
+});
+
+test('isImagePath: non-image files are false', () => {
+  assert.equal(isImagePath('report.html'), false);
+  assert.equal(isImagePath('trace.zip'), false);
+  assert.equal(isImagePath('noext'), false);
+});
+
+// =============================================================================
 // build / buildBody
 // =============================================================================
 
@@ -178,7 +202,7 @@ test('build: MESSAGE empty => no message line', () => {
 });
 
 test('build: MARKER is the last line and matches input', () => {
-  const marker = '<!-- artifact-branch-comment-images -->';
+  const marker = '<!-- artifact-branch-comment-files -->';
   const body = buildBody({
     files: ['artifacts/a.gif'],
     urlPrefix: 'https://x/',
@@ -209,6 +233,40 @@ test('build: multiple files each get a line', () => {
   });
   assert.ok(body.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
   assert.ok(body.includes('![artifacts/b.gif](https://h/artifacts/b.gif)'));
+});
+
+test('build: non-image files only => bulleted links, no image lines', () => {
+  const body = buildBody({
+    files: ['artifacts/report.html', 'artifacts/trace.zip'],
+    urlPrefix: 'https://h/',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  assert.ok(body.includes('- [artifacts/report.html](https://h/artifacts/report.html)'));
+  assert.ok(body.includes('- [artifacts/trace.zip](https://h/artifacts/trace.zip)'));
+  assert.ok(!body.includes('!['));
+});
+
+test('build: mixed files => non-image bullet list appears before image lines', () => {
+  const body = buildBody({
+    files: ['artifacts/report.html', 'artifacts/a.png', 'artifacts/trace.zip'],
+    urlPrefix: 'https://h/',
+    message: 'Files:',
+    marker: '<!-- m -->',
+  });
+
+  const bulletIndex = body.indexOf('- [artifacts/report.html]');
+  const zipBulletIndex = body.indexOf('- [artifacts/trace.zip]');
+  const imageIndex = body.indexOf('![artifacts/a.png]');
+  const markerIndex = body.indexOf('<!-- m -->');
+  const messageIndex = body.indexOf('Files:');
+
+  assert.ok(messageIndex >= 0);
+  assert.ok(bulletIndex > messageIndex);
+  assert.ok(zipBulletIndex > messageIndex);
+  assert.ok(imageIndex > bulletIndex);
+  assert.ok(imageIndex > zipBulletIndex);
+  assert.ok(markerIndex > imageIndex);
 });
 
 test('build: body written to both comment-body.md and step summary', () => {

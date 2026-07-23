@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 // =============================================================================
-// artifact-branch-comment-images
+// artifact-branch-comment-files
 //
-// Helper script for the comment-images composite action. Mode is selected by
+// Helper script for the comment-files composite action. Mode is selected by
 // the first CLI argument. This script is env-driven and resolves relative
 // paths against the current working directory (== GITHUB_WORKSPACE),
 // mirroring the style of publish.sh.
@@ -62,6 +62,15 @@ export const urlencodePath = (rel) =>
 // alt text of a markdown image link (`![<alt>](...)`). Unescaped `]` would
 // otherwise close the alt text early and break the link.
 export const escapeMarkdownAlt = (rel) => rel.replace(/[\\[\]]/g, '\\$&');
+
+const IMAGE_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif', '.bmp', '.ico',
+]);
+// Decide whether a file should be embedded inline (image) or shown as a
+// plain link, based purely on its extension (the file contents are never
+// read). The set matches the raster/vector formats GitHub renders inline.
+export const isImagePath = (rel) =>
+  IMAGE_EXTENSIONS.has(path.extname(rel).toLowerCase());
 
 // --- detect --------------------------------------------------------------
 // Expand the FILES globs into a stable, de-duplicated list of relative paths.
@@ -133,27 +142,46 @@ export const detect = (env) => {
 
 // --- build -------------------------------------------------------------------
 // Turn the detected file list into a markdown comment body:
-//   [MESSAGE, blank line]  (only when MESSAGE is non-empty)
-//   ![<relpath>](<URL_PREFIX><percent-encoded relpath>)   x N
-//   blank line
+//   [MESSAGE]                                             (only when non-empty)
+//   - [<relpath>](<URL_PREFIX><percent-encoded relpath>)  x N  (non-image files)
+//   ![<relpath>](<URL_PREFIX><percent-encoded relpath>)   x N  (image files)
 //   MARKER
+//
+// Non-image files are listed before images so that ordinary links stay
+// visible without having to scroll past potentially tall inline images.
+// URL_PREFIX is expected to end with a slash, so each relative path is simply
+// concatenated onto it.
 
 export const buildBody = ({ files, urlPrefix, message, marker }) => {
-  let body = '';
-
-  // 1. Optional leading message.
-  if (message) body += `${message}\n\n`;
-
-  // 2. One image per detected file. URL_PREFIX is expected to end with a
-  //    slash, so the relative path is simply concatenated onto it.
+  // Split into images and non-images in a single pass. `prefix` is the only
+  // difference between the two rendered forms: `- [alt](url)` for a bulleted
+  // link vs `![alt](url)` for an inline image.
+  const images = [];
+  const others = [];
   for (const rel of files) {
-    body += `![${escapeMarkdownAlt(rel)}](${urlPrefix}${urlencodePath(rel)})\n`;
+    (isImagePath(rel) ? images : others).push(rel);
   }
 
-  // 3. Blank line then the hidden marker (used to find/replace prior comments).
-  body += `\n${marker}\n`;
+  const renderLines = (list, prefix) =>
+    list
+      .map((rel) => `${prefix}[${escapeMarkdownAlt(rel)}](${urlPrefix}${urlencodePath(rel)})`)
+      .join('\n');
 
-  return body;
+  const sections = [];
+
+  // 1. Optional leading message.
+  if (message) sections.push(message);
+
+  // 2. Non-image files as a bulleted link list.
+  if (others.length) sections.push(renderLines(others, '- '));
+
+  // 3. Image files embedded inline.
+  if (images.length) sections.push(renderLines(images, '!'));
+
+  // 4. Hidden marker (used to find/replace prior comments).
+  sections.push(marker);
+
+  return `${sections.join('\n\n')}\n`;
 };
 
 export const build = (env) => {

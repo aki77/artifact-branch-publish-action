@@ -1,15 +1,15 @@
-name: 'artifact-branch-comment-images'
-description: 'Publish matched image files and post (replacing any previous) a PR comment linking to them'
+name: 'artifact-branch-comment-files'
+description: 'Publish matched files and post (replacing any previous) a PR comment: images inline, other files as links'
 inputs:
   files:
-    description: 'Glob pattern of image files to publish and comment (e.g. artifacts/**/*.gif)'
+    description: 'Glob pattern of files to publish and comment (e.g. artifacts/**/*)'
     required: true
   message:
-    description: 'Optional leading message placed above the images in the comment body.'
+    description: 'Optional leading message placed above the file list in the comment body.'
     default: ''
   marker:
     description: 'Hidden HTML marker appended to the comment. Used to find and replace prior comments from this action.'
-    default: '<!-- artifact-branch-comment-images -->'
+    default: '<!-- artifact-branch-comment-files -->'
   branch-prefix:
     description: 'Prefix for the dedicated rotating branches. Passed through to artifact-branch-publish.'
     default: 'artifacts'
