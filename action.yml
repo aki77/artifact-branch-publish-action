@@ -1,0 +1,38 @@
+name: 'artifact-branch-publish'
+description: 'Publish files to dedicated rotating branches and return a commit-pinned URL prefix'
+inputs:
+  files:
+    description: 'Glob pattern of files to publish (e.g. artifacts/**/*.gif)'
+    required: true
+  branch-prefix:
+    description: 'Prefix for the dedicated rotating branches. The actual branches are named <branch-prefix>-gen-N.'
+    default: 'artifacts'
+  retain-days:
+    description: 'Minimum number of days a published URL is guaranteed to stay valid. Once the active generation''s oldest commit is older than this, publishing rotates to a new generation and the second-oldest generation is pruned.'
+    default: '30'
+  github-token:
+    description: 'Token used to push to the repository (needs contents: write)'
+    default: ${{ github.token }}
+outputs:
+  url-prefix:
+    description: 'Commit-pinned base URL. Append the relative file path to get the viewable URL.'
+    value: ${{ steps.publish.outputs.url-prefix }}
+  commit-sha:
+    description: 'The commit SHA the artifacts were pushed as.'
+    value: ${{ steps.publish.outputs.commit-sha }}
+  branch:
+    description: 'The actual generation branch the artifacts were pushed to (e.g. artifacts-gen-7).'
+    value: ${{ steps.publish.outputs.branch }}
+runs:
+  using: 'composite'
+  steps:
+    - id: publish
+      shell: bash
+      run: ${{ github.action_path }}/publish.sh
+      env:
+        FILES: ${{ inputs.files }}
+        BRANCH_PREFIX: ${{ inputs.branch-prefix }}
+        RETAIN_DAYS: ${{ inputs.retain-days }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}

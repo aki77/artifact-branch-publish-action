@@ -1,0 +1,32 @@
+name: Example - publish artifacts
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # E2E tests etc. generate artifact files (screenshots, videos, etc.) here.
+      # Generate a dummy artifact file for verification purposes.
+      - name: Generate dummy artifacts
+        run: |
+          mkdir -p artifacts
+          echo "hello from run ${{ github.run_id }}" > artifacts/demo.txt
+
+      - id: publish
+        uses: ./
+        with:
+          files: artifacts/**/*.txt
+
+      - name: Add link to step summary
+        run: |
+          echo "[demo.txt](${{ steps.publish.outputs.url-prefix }}artifacts/demo.txt)" >> "$GITHUB_STEP_SUMMARY"
+          echo "branch: ${{ steps.publish.outputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "commit-sha: ${{ steps.publish.outputs.commit-sha }}" >> "$GITHUB_STEP_SUMMARY"
