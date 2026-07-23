@@ -11,7 +11,7 @@ jobs:
   publish-artifacts:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # E2E tests etc. generate artifact files (screenshots, videos, etc.) here.
       # Generate a dummy artifact file for verification purposes.
