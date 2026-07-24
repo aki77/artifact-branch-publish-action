@@ -86,7 +86,7 @@ Files are served from `github.com` via `?raw=true`, and **how a browser handles 
 | File type | Served as | In the browser |
 | --- | --- | --- |
 | Images (`.png`, `.jpg`, `.gif`, `.svg`, `.webp`, …) | correct MIME (e.g. `image/png`) | **displayed inline** — works great for embedding in Step Summaries / comments |
-| Audio / video (`.mp3`, `.mp4`, …) | correct MIME (e.g. `audio/mpeg`) | **plays / downloads** correctly |
+| Audio / video (`.mp3`, `.mp4`, …) | often correct MIME (e.g. `audio/mpeg`), but GitHub adds `Content-Disposition: attachment` | **always downloaded**, never played inline in the browser |
 | **HTML** (`.html`, `.htm`) | `text/plain` | **shown as source, not rendered** (see below) |
 | Text / Markdown (`.txt`, `.md`, …) | `text/plain` | shown as plain text |
 
