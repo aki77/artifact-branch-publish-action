@@ -31,7 +31,7 @@ jobs:
           echo "branch: ${{ steps.publish.outputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
           echo "commit-sha: ${{ steps.publish.outputs.commit-sha }}" >> "$GITHUB_STEP_SUMMARY"
 
-  comment-images:
+  comment-files:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -39,14 +39,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # E2E tests etc. generate screenshot/image files here.
-      # Download a random image for verification purposes.
-      - name: Generate dummy images
+      # E2E tests etc. generate artifact files here.
+      # Download a random image plus a text file, for verification purposes.
+      # (The image is embedded inline; the .txt is listed as a link — see the README's
+      #  "File types and browser behavior" section for why HTML is intentionally avoided here.)
+      - name: Generate dummy artifacts
         run: |
           mkdir -p artifacts
           curl -fsSL "https://picsum.photos/seed/${{ github.run_id }}/800/600" -o artifacts/demo.png
+          echo "hello from run ${{ github.run_id }}" > artifacts/demo.txt
 
-      - uses: ./comment-images
+      - uses: ./comment-files
         with:
-          files: artifacts/**/*.png
-          message: 'Screenshots from this run:'
+          files: artifacts/**/*
+          message: "Artifacts from this run:"
