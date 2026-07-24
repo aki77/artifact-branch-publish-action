@@ -63,6 +63,16 @@ export const urlencodePath = (rel) =>
 // otherwise close the alt text early and break the link.
 export const escapeMarkdownAlt = (rel) => rel.replace(/[\\[\]]/g, '\\$&');
 
+// Build the commit-pinned, same-origin viewable URL for one published file.
+// `base` is `<server>/<repo>/blob/<sha>/<dest>` (no trailing slash); the path is
+// percent-encoded segment-wise and the `?raw=true` suffix makes github.com serve
+// the raw file bytes from the same origin, so a logged-in viewer with repo access
+// can see files even in a private repo. This is the single source of truth for
+// the URL format: publish.sh imports it (via `node -e`) to build its `urls`
+// output, so both the standalone action and the comment body render identical URLs.
+export const buildFileUrl = (base, rel) =>
+  `${base}/${urlencodePath(rel)}?raw=true`;
+
 const IMAGE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif', '.bmp', '.ico',
 ]);
@@ -142,17 +152,19 @@ export const detect = (env) => {
 
 // --- build -------------------------------------------------------------------
 // Turn the detected file list into a markdown comment body:
-//   [MESSAGE]                                             (only when non-empty)
-//   - [<relpath>](<URL_PREFIX><percent-encoded relpath>)  x N  (non-image files)
-//   ![<relpath>](<URL_PREFIX><percent-encoded relpath>)   x N  (image files)
+//   [MESSAGE]                                          (only when non-empty)
+//   - [<relpath>](<base>/<enc relpath>?raw=true)  x N  (non-image files)
+//   ![<relpath>](<base>/<enc relpath>?raw=true)   x N  (image files)
 //   MARKER
 //
 // Non-image files are listed before images so that ordinary links stay
 // visible without having to scroll past potentially tall inline images.
-// URL_PREFIX is expected to end with a slash, so each relative path is simply
-// concatenated onto it.
+// `base` is `<server>/<repo>/blob/<sha>/<dest>` (no trailing slash); each URL
+// is built as `<base>/<percent-encoded relpath>?raw=true`. The `?raw=true`
+// suffix makes github.com serve the raw file bytes from the same origin, so a
+// logged-in viewer with repo access can see files even in a private repo.
 
-export const buildBody = ({ files, urlPrefix, message, marker }) => {
+export const buildBody = ({ files, base, message, marker }) => {
   // Split into images and non-images in a single pass. `prefix` is the only
   // difference between the two rendered forms: `- [alt](url)` for a bulleted
   // link vs `![alt](url)` for an inline image.
@@ -164,7 +176,7 @@ export const buildBody = ({ files, urlPrefix, message, marker }) => {
 
   const renderLines = (list, prefix) =>
     list
-      .map((rel) => `${prefix}[${escapeMarkdownAlt(rel)}](${urlPrefix}${urlencodePath(rel)})`)
+      .map((rel) => `${prefix}[${escapeMarkdownAlt(rel)}](${buildFileUrl(base, rel)})`)
       .join('\n');
 
   const sections = [];
@@ -186,16 +198,27 @@ export const buildBody = ({ files, urlPrefix, message, marker }) => {
 
 export const build = (env) => {
   const runnerTemp = requireEnv(env, 'RUNNER_TEMP');
-  const urlPrefix = env.URL_PREFIX ?? '';
   const message = env.MESSAGE ?? '';
   const marker = env.MARKER ?? '';
+
+  // Build the commit-pinned, same-origin base every file URL is anchored to:
+  //   <server>/<repo>/blob/<sha>/<dest>
+  // buildFileUrl() then appends `/<enc relpath>?raw=true`. publish.sh assembles
+  // the same `base` string for its own `urls` output, so keep the two in sync.
+  const serverUrl = env.SERVER_URL ?? 'https://github.com';
+  const repo = requireEnv(env, 'GITHUB_REPOSITORY');
+  const sha = requireEnv(env, 'COMMIT_SHA');
+  // Strip any leading/trailing slashes so the path joins cleanly and no double
+  // slash sneaks into the URL.
+  const dest = (env.DEST_DIR ?? '').replace(/^\/+|\/+$/g, '');
+  const base = `${serverUrl}/${repo}/blob/${sha}/${dest}`;
 
   const filesTxtPath = path.join(runnerTemp, 'files.txt');
   const files = readFileSync(filesTxtPath, 'utf8')
     .split('\n')
     .filter((line) => line.length > 0);
 
-  const body = buildBody({ files, urlPrefix, message, marker });
+  const body = buildBody({ files, base, message, marker });
 
   writeFileSync(path.join(runnerTemp, 'comment-body.md'), body);
 
@@ -230,10 +253,12 @@ export const main = (argv, env) => {
   }
 };
 
-// Run main() only when invoked as a CLI (not when imported by tests). Compare
+// Run main() only when invoked as a CLI (not when imported by tests, nor when
+// imported via `node -e` from publish.sh to reuse urlencodePath). Compare
 // against pathToFileURL(...).href rather than a hand-built `file://` string so
 // that paths containing spaces or other characters that require percent-encoding
 // still match import.meta.url (which is always a normalized, encoded URL).
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// process.argv[1] is undefined under `node -e`, so guard before converting it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv, process.env);
 }

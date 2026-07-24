@@ -58,7 +58,7 @@ run_publish() {
     "REPO_URL=file://$BARE"
     "GITHUB_REPOSITORY=owner/repo"
     "GITHUB_OUTPUT=$out"
-    "SERVER_URL=https://raw.example.test"
+    "SERVER_URL=https://github.example.test"
     "BRANCH_PREFIX=$BRANCH"
     "DEST_DIR=$dest"
     "RUN_ID=test-run"
@@ -79,7 +79,9 @@ run_publish() {
   fi
   OUT_SHA="$(sed -n 's/^commit-sha=//p' "$out")"
   OUT_BRANCH="$(sed -n 's/^branch=//p' "$out")"
-  OUT_URL="$(sed -n 's/^url-prefix=//p' "$out")"
+  # `urls` is written as a multi-line heredoc-delimited output value; grab the
+  # first full URL line for the format assertions.
+  OUT_URL="$(grep -m1 -E '^https://' "$out")"
   return 0
 }
 
@@ -113,9 +115,9 @@ check "gen-0 has exactly 1 commit" "[ \"\$(bq rev-list --count ${BRANCH}-gen-0)\
 SHA0="$OUT_SHA"
 
 echo
-echo "== Test 7: url-prefix format =="
-check "url-prefix matches expected format" \
-  "printf '%s' '$OUT_URL' | grep -Eq '^https://raw\\.example\\.test/owner/repo/[0-9a-f]{40}/pr-1/\$'"
+echo "== Test 7: urls format =="
+check "urls entry matches expected blob?raw=true format" \
+  "printf '%s' '$OUT_URL' | grep -Eq '^https://github\\.example\\.test/owner/repo/blob/[0-9a-f]{40}/pr-1/artifacts/a\\.gif\\?raw=true\$'"
 
 echo
 echo "== Test 2: a recent generation stays active (no rotation) =="
@@ -128,7 +130,7 @@ recent_publish() {
   local envv=(
     "REPO_URL=file://$RECENT_BARE"
     "GITHUB_REPOSITORY=owner/repo" "GITHUB_OUTPUT=$out"
-    "SERVER_URL=https://raw.example.test" "BRANCH_PREFIX=$BRANCH"
+    "SERVER_URL=https://github.example.test" "BRANCH_PREFIX=$BRANCH"
     "DEST_DIR=$dest" "RUN_ID=test-run" "RUN_ATTEMPT=1"
     "RETAIN_DAYS=$RETAIN" "FILES=$files" "GITHUB_TOKEN=dummy"
   )
@@ -196,7 +198,7 @@ prune_publish() {
   local envv=(
     "REPO_URL=file://$PRUNE_BARE"
     "GITHUB_REPOSITORY=owner/repo" "GITHUB_OUTPUT=$out"
-    "SERVER_URL=https://raw.example.test" "BRANCH_PREFIX=$BRANCH"
+    "SERVER_URL=https://github.example.test" "BRANCH_PREFIX=$BRANCH"
     "DEST_DIR=$dest" "RUN_ID=test-run" "RUN_ATTEMPT=1"
     "RETAIN_DAYS=$RETAIN" "FILES=$files" "GITHUB_TOKEN=dummy"
   )
@@ -264,7 +266,7 @@ OUT_AUTO="$TMP/output.auto"
   REPO_URL="file://$BARE_AUTO" \
   GITHUB_REPOSITORY="owner/repo" \
   GITHUB_OUTPUT="$OUT_AUTO" \
-  SERVER_URL="https://raw.example.test" \
+  SERVER_URL="https://github.example.test" \
   BRANCH_PREFIX="$BRANCH" \
   RUN_ID="99887766" \
   RUN_ATTEMPT="2" \
@@ -272,10 +274,10 @@ OUT_AUTO="$TMP/output.auto"
   FILES="artifacts/auto.gif" \
   GITHUB_TOKEN="dummy" \
   bash "$PUBLISH" >/dev/null 2>"$TMP/err.log" ) || fail "publish (auto dest-dir) succeeded"
-AUTO_URL="$(sed -n 's/^url-prefix=//p' "$OUT_AUTO")"
+AUTO_URL="$(grep -m1 -E '^https://' "$OUT_AUTO")"
 AUTO_BRANCH="$(sed -n 's/^branch=//p' "$OUT_AUTO")"
-check "auto dest-dir url ends in /99887766-2/" \
-  "printf '%s' '$AUTO_URL' | grep -Eq '/99887766-2/\$'"
+check "auto dest-dir url uses blob/<sha>/99887766-2/...?raw=true" \
+  "printf '%s' '$AUTO_URL' | grep -Eq '^https://github\\.example\\.test/owner/repo/blob/[0-9a-f]{40}/99887766-2/artifacts/auto\\.gif\\?raw=true\$'"
 check "auto dest-dir file placed under 99887766-2/" \
   "git --git-dir='$BARE_AUTO' cat-file -e '${AUTO_BRANCH}:99887766-2/artifacts/auto.gif'"
 
@@ -295,7 +297,7 @@ OUT_GLOB="$TMP/output.glob"
   REPO_URL="file://$BARE_GLOB" \
   GITHUB_REPOSITORY="owner/repo" \
   GITHUB_OUTPUT="$OUT_GLOB" \
-  SERVER_URL="https://raw.example.test" \
+  SERVER_URL="https://github.example.test" \
   BRANCH_PREFIX="$BRANCH" \
   DEST_DIR="pr-glob" \
   RUN_ID="1" RUN_ATTEMPT="1" \
@@ -322,7 +324,7 @@ if ( cd "$WS_EMPTY" && \
   REPO_URL="file://$BARE_EMPTY" \
   GITHUB_REPOSITORY="owner/repo" \
   GITHUB_OUTPUT="$OUT_EMPTY" \
-  SERVER_URL="https://raw.example.test" \
+  SERVER_URL="https://github.example.test" \
   BRANCH_PREFIX="$BRANCH" \
   DEST_DIR="pr-empty" \
   RUN_ID="1" RUN_ATTEMPT="1" \

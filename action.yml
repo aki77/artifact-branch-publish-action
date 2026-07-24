@@ -1,5 +1,5 @@
 name: 'artifact-branch-publish'
-description: 'Publish files to dedicated rotating branches and return a commit-pinned URL prefix'
+description: 'Publish files to dedicated rotating branches and return commit-pinned viewable URLs'
 inputs:
   files:
     description: 'Glob pattern of files to publish (e.g. artifacts/**/*.gif)'
@@ -14,9 +14,9 @@ inputs:
     description: 'Token used to push to the repository (needs contents: write)'
     default: ${{ github.token }}
 outputs:
-  url-prefix:
-    description: 'Commit-pinned base URL. Append the relative file path to get the viewable URL.'
-    value: ${{ steps.publish.outputs.url-prefix }}
+  urls:
+    description: 'Newline-separated list of full viewable URLs (one per published file), of the form https://github.com/<repo>/blob/<sha>/<dest>/<path>?raw=true. Same-origin with github.com, so they render for logged-in viewers even on private repos.'
+    value: ${{ steps.publish.outputs.urls }}
   commit-sha:
     description: 'The commit SHA the artifacts were pushed as.'
     value: ${{ steps.publish.outputs.commit-sha }}
@@ -36,3 +36,5 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         RUN_ID: ${{ github.run_id }}
         RUN_ATTEMPT: ${{ github.run_attempt }}
+        ACTION_PATH: ${{ github.action_path }}
+        SERVER_URL: ${{ github.server_url }}
