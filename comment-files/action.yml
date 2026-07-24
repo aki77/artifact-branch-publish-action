@@ -20,9 +20,9 @@ inputs:
     description: 'Token used to push and to post the comment (needs contents: write and pull-requests: write).'
     default: ${{ github.token }}
 outputs:
-  url-prefix:
-    description: 'Commit-pinned base URL. Append the relative file path to get the viewable URL.'
-    value: ${{ steps.publish.outputs.url-prefix }}
+  urls:
+    description: 'Newline-separated list of full viewable URLs (one per published file), of the form https://github.com/<repo>/blob/<sha>/<dest>/<path>?raw=true. Same-origin with github.com, so they render for logged-in viewers even on private repos.'
+    value: ${{ steps.publish.outputs.urls }}
   commit-sha:
     description: 'The commit SHA the artifacts were pushed as.'
     value: ${{ steps.publish.outputs.commit-sha }}
@@ -57,7 +57,10 @@ runs:
       shell: bash
       run: node ${{ github.action_path }}/comment.mjs build
       env:
-        URL_PREFIX: ${{ steps.publish.outputs.url-prefix }}
+        SERVER_URL: ${{ github.server_url }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        COMMIT_SHA: ${{ steps.publish.outputs.commit-sha }}
+        DEST_DIR: ${{ github.run_id }}-${{ github.run_attempt }}
         MESSAGE: ${{ inputs.message }}
         MARKER: ${{ inputs.marker }}
         RUNNER_TEMP: ${{ runner.temp }}

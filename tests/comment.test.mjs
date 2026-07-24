@@ -164,16 +164,16 @@ test('isImagePath: non-image files are false', () => {
 // build / buildBody
 // =============================================================================
 
-test('build: image lines with trailing-slash prefix concat', () => {
+test('build: image lines built from base with ?raw=true suffix', () => {
   const body = buildBody({
     files: ['artifacts/a.gif'],
-    urlPrefix: 'https://raw.example.test/owner/repo/deadbeef/pr-1/',
+    base: 'https://github.example.test/owner/repo/blob/deadbeef/pr-1',
     message: '',
     marker: '<!-- m -->',
   });
   assert.ok(
     body.includes(
-      '![artifacts/a.gif](https://raw.example.test/owner/repo/deadbeef/pr-1/artifacts/a.gif)',
+      '![artifacts/a.gif](https://github.example.test/owner/repo/blob/deadbeef/pr-1/artifacts/a.gif?raw=true)',
     ),
   );
 });
@@ -181,7 +181,7 @@ test('build: image lines with trailing-slash prefix concat', () => {
 test('build: MESSAGE present at top', () => {
   const body = buildBody({
     files: ['artifacts/a.gif'],
-    urlPrefix: 'https://x/',
+    base: 'https://x',
     message: 'Here are the screenshots',
     marker: '<!-- m -->',
   });
@@ -193,7 +193,7 @@ test('build: MESSAGE present at top', () => {
 test('build: MESSAGE empty => no message line', () => {
   const body = buildBody({
     files: ['artifacts/a.gif'],
-    urlPrefix: 'https://x/',
+    base: 'https://x',
     message: '',
     marker: '<!-- m -->',
   });
@@ -205,7 +205,7 @@ test('build: MARKER is the last line and matches input', () => {
   const marker = '<!-- artifact-branch-comment-files -->';
   const body = buildBody({
     files: ['artifacts/a.gif'],
-    urlPrefix: 'https://x/',
+    base: 'https://x',
     message: '',
     marker,
   });
@@ -217,40 +217,54 @@ test('build: MARKER is the last line and matches input', () => {
 test('build: subdirectory relpath preserved in alt text', () => {
   const body = buildBody({
     files: ['a/b/c.gif'],
-    urlPrefix: 'https://host/base/',
+    base: 'https://host/base',
     message: '',
     marker: '<!-- m -->',
   });
-  assert.ok(body.includes('![a/b/c.gif](https://host/base/a/b/c.gif)'));
+  assert.ok(body.includes('![a/b/c.gif](https://host/base/a/b/c.gif?raw=true)'));
 });
 
 test('build: multiple files each get a line', () => {
   const body = buildBody({
     files: ['artifacts/a.gif', 'artifacts/b.gif'],
-    urlPrefix: 'https://h/',
+    base: 'https://h',
     message: '',
     marker: '<!-- m -->',
   });
-  assert.ok(body.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
-  assert.ok(body.includes('![artifacts/b.gif](https://h/artifacts/b.gif)'));
+  assert.ok(body.includes('![artifacts/a.gif](https://h/artifacts/a.gif?raw=true)'));
+  assert.ok(body.includes('![artifacts/b.gif](https://h/artifacts/b.gif?raw=true)'));
+});
+
+test('build: filenames with spaces are percent-encoded in the URL', () => {
+  const body = buildBody({
+    files: ['artifacts/a b.gif'],
+    base: 'https://h',
+    message: '',
+    marker: '<!-- m -->',
+  });
+  // Alt text keeps the raw name; only the URL segment is encoded, and the
+  // ?raw=true suffix is preserved.
+  assert.ok(
+    body.includes('![artifacts/a b.gif](https://h/artifacts/a%20b.gif?raw=true)'),
+  );
 });
 
 test('build: non-image files only => bulleted links, no image lines', () => {
   const body = buildBody({
     files: ['artifacts/report.html', 'artifacts/trace.zip'],
-    urlPrefix: 'https://h/',
+    base: 'https://h',
     message: '',
     marker: '<!-- m -->',
   });
-  assert.ok(body.includes('- [artifacts/report.html](https://h/artifacts/report.html)'));
-  assert.ok(body.includes('- [artifacts/trace.zip](https://h/artifacts/trace.zip)'));
+  assert.ok(body.includes('- [artifacts/report.html](https://h/artifacts/report.html?raw=true)'));
+  assert.ok(body.includes('- [artifacts/trace.zip](https://h/artifacts/trace.zip?raw=true)'));
   assert.ok(!body.includes('!['));
 });
 
 test('build: mixed files => non-image bullet list appears before image lines', () => {
   const body = buildBody({
     files: ['artifacts/report.html', 'artifacts/a.png', 'artifacts/trace.zip'],
-    urlPrefix: 'https://h/',
+    base: 'https://h',
     message: 'Files:',
     marker: '<!-- m -->',
   });
@@ -278,7 +292,10 @@ test('build: body written to both comment-body.md and step summary', () => {
 
   build({
     RUNNER_TEMP: rt,
-    URL_PREFIX: 'https://h/',
+    SERVER_URL: 'https://h',
+    GITHUB_REPOSITORY: 'o/r',
+    COMMIT_SHA: 'deadbeef',
+    DEST_DIR: 'pr-1',
     MESSAGE: 'Hello',
     MARKER: '<!-- m -->',
     GITHUB_STEP_SUMMARY: summary,
@@ -286,10 +303,10 @@ test('build: body written to both comment-body.md and step summary', () => {
 
   const bodyContent = readFileSync(path.join(rt, 'comment-body.md'), 'utf8');
   assert.ok(bodyContent.length > 0);
-  assert.ok(bodyContent.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
+  assert.ok(bodyContent.includes('![artifacts/a.gif](https://h/o/r/blob/deadbeef/pr-1/artifacts/a.gif?raw=true)'));
 
   const summaryContent = readFileSync(summary, 'utf8');
-  assert.ok(summaryContent.includes('![artifacts/a.gif](https://h/artifacts/a.gif)'));
+  assert.ok(summaryContent.includes('![artifacts/a.gif](https://h/o/r/blob/deadbeef/pr-1/artifacts/a.gif?raw=true)'));
   assert.ok(summaryContent.split('\n').includes('Hello'));
   assert.equal(summaryContent, bodyContent);
 });

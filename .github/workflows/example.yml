@@ -27,7 +27,9 @@ jobs:
 
       - name: Add link to step summary
         run: |
-          echo "[demo.txt](${{ steps.publish.outputs.url-prefix }}artifacts/demo.txt)" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.publish.outputs.urls }}" | while IFS= read -r url; do
+            echo "[demo.txt]($url)" >> "$GITHUB_STEP_SUMMARY"
+          done
           echo "branch: ${{ steps.publish.outputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
           echo "commit-sha: ${{ steps.publish.outputs.commit-sha }}" >> "$GITHUB_STEP_SUMMARY"
 
